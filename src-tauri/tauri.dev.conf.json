@@ -1,0 +1,6 @@
+{
+  "identifier": "com.onetool.app.dev",
+  "app": {
+    "appDirectoriesOverride": "./one-tool-dev-data"
+  }
+}
