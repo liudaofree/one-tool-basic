@@ -38,7 +38,7 @@
 
 业务功能由单独的签名插件提供，主程序不内置业务页面或规则。使用时打开侧栏「插件」，点击「导入插件」，选择插件包文件。主程序校验插件签名及接口版本后安装；签名或格式不正确时保留原插件。安装后在「插件」页面使用插件提供的功能。
 
-插件源码、签名私钥和构建产物位于单独的私有项目。公开发布主程序前，请再次检查源码和业务样例；此目录尚未初始化 Git。
+插件源码、签名私钥和构建产物位于单独的私有项目。公开发布主程序前，请再次检查源码和业务样例。
 
 ## 本地开发
 
@@ -108,7 +108,7 @@ npm install
 npm run tauri:build -- --bundles app,dmg
 ```
 
-产物位于 `src-tauri/target/release/bundle/macos/` 和 `src-tauri/target/release/bundle/dmg/`。请在目标 Mac 上验证目录选择、Finder 打开目录、钥匙串读写与 AI 连接；当前 Windows 环境无法完成 macOS 构建及运行验收。
+产物位于 `src-tauri/target/release/bundle/macos/` 和 `src-tauri/target/release/bundle/dmg/`。macOS 安装包由 GitHub Actions 构建，仍需在目标 Mac 上验证目录选择、Finder 打开目录、钥匙串读写与 AI 连接。
 
 ## GitHub 自动发布与更新
 
@@ -116,6 +116,6 @@ npm run tauri:build -- --bundles app,dmg
 
 推送 `app-vX.Y.Z` 标签后，GitHub Actions 在 Windows、macOS Intel 和 Apple Silicon 上构建安装包，所有构建成功后发布同一个 Release。桌面应用启动时自动检查新版本；发现更新后，右上角显示“更新到 vX.Y.Z”，点击后下载、校验签名、安装并重启。也可以点击“检查更新”手动检查。浏览器开发模式不检查更新。
 
-首次发布前，在仓库 Settings → Secrets and variables → Actions 创建 `TAURI_SIGNING_PRIVATE_KEY`，内容为本机 `%LOCALAPPDATA%\one-tool\signing\one-tool.key` 的完整文本。不要提交私钥。对应公钥已写入 `src-tauri/tauri.conf.json`。以后发布时必须继续使用同一私钥，否则已安装的客户端无法验证更新。
+仓库已在 Settings → Secrets and variables → Actions 配置 `TAURI_SIGNING_PRIVATE_KEY`，内容为本机 `%LOCALAPPDATA%\one-tool\signing\one-tool.key` 的完整文本。不要提交私钥。对应公钥已写入 `src-tauri/tauri.conf.json`。以后发布时必须继续使用同一私钥，否则已安装的客户端无法验证更新。
 
 发布新版本时，同时更新 `src-tauri/tauri.conf.json` 与 `src-tauri/Cargo.toml` 中的版本号，提交并推送，然后创建并推送对应标签，例如 `app-v0.2.0`。GitHub Actions 会自动打包、发布并生成更新清单 `latest.json`。Windows 安装包未做商业代码签名；macOS 使用 ad-hoc 签名，首次安装可能需要用户在系统中允许打开。若要消除系统警告，需另行配置 Windows 代码签名证书和 Apple Developer 签名、公证。
