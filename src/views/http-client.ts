@@ -12,6 +12,7 @@ import { Storage } from '../utils/storage';
 import { prepareHttpRequest, requestPreview, enabledFormItems } from '../utils/http-request';
 import { normalizeDomain } from '../utils/http-cookies';
 import { queryFromUrl, updateUrlQuery, urlOnlyPayload } from '../utils/http-query';
+import { confirmAction } from '../utils/confirm-dialog';
 
 const COMMON_HEADER_SUGGESTIONS = [
   'Accept',
@@ -156,16 +157,13 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
 
             <div class="http-request-secondary">
             <button id="btn-http-new" class="btn btn-secondary btn-sm http-new-request" type="button" title="开始一个新的空白请求">＋ 新建请求</button>
-            <button id="btn-toggle-ssl" class="pill-toggle" title="是否跳过 SSL 证书校验（自签证书/本地测试）">校验 SSL</button>
-
-            <!-- Action Buttons -->
-            <button id="btn-request-preview" class="btn btn-secondary btn-sm">请求预览</button>
-            <button id="btn-http-cookies-manage" class="btn btn-secondary btn-sm" title="管理域名 Cookies (类似 Postman Manage Cookies)">
-              <span>Cookie 管理</span>
-            </button>
             <button id="btn-http-save" class="btn btn-secondary btn-sm" title="收藏当前请求">
               <span>收藏</span>
             </button>
+            <details class="http-more-actions"><summary>更多操作</summary><div class="http-more-menu">
+            <button id="btn-toggle-ssl" class="pill-toggle" title="是否跳过 SSL 证书校验（自签证书/本地测试）">校验 SSL</button>
+            <button id="btn-request-preview" class="btn btn-secondary btn-sm">请求预览</button>
+            <button id="btn-http-cookies-manage" class="btn btn-secondary btn-sm" title="管理域名 Cookies (类似 Postman Manage Cookies)"><span>Cookie 管理</span></button>
             <button id="btn-http-curl-import" class="btn btn-secondary btn-sm" title="导入 cURL 命令">
               <span>导入 cURL</span>
             </button>
@@ -175,6 +173,7 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
             <button id="btn-http-clear" class="btn btn-ghost btn-sm" title="清空请求">
               <span>清空请求</span>
             </button>
+            </div></details>
             </div>
           </div>
 
@@ -319,8 +318,9 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
               <div class="http-resp-body">
                 <div id="resp-view-body" class="resp-view-content active">
                   <div id="resp-empty" class="resp-empty-state">
-                    <div class="empty-icon">🌐</div>
-                    <p>准备就绪，点击上方「发送请求」执行请求</p>
+                    <div class="empty-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><rect x="7" y="10" width="34" height="28" rx="5"/><path d="m17 19 5 5-5 5m9 0h7"/></svg></div>
+                    <strong>响应将在这里显示</strong>
+                    <p>输入 URL 并发送请求，查看状态、响应体和响应头。</p>
                     <button id="btn-test-sample" class="btn btn-secondary btn-sm">
                       试试 GitHub API 示例
                     </button>
@@ -494,25 +494,6 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
         </div>
       </div>
 
-      <!-- Generic Dark Themed Confirm Dialog Modal -->
-      <div id="confirm-modal" class="modal-overlay" style="display: none; z-index: 10000;">
-        <div class="modal-card" style="max-width: 420px; width: 90%; border: 1px solid var(--border); box-shadow: var(--shadow);">
-          <div class="modal-header" style="border-bottom: 1px solid var(--border); padding-bottom: 10px;">
-            <h3 id="confirm-modal-title" style="font-size: 14.5px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
-              <span>⚠️</span>
-              <span id="confirm-modal-title-text">操作确认</span>
-            </h3>
-            <button class="btn-close" id="btn-close-confirm">✕</button>
-          </div>
-          <div class="modal-body" style="padding: 16px 0;">
-            <p id="confirm-modal-message" style="font-size: 13.5px; color: var(--text-main); line-height: 1.6; margin: 0;"></p>
-          </div>
-          <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding-top: 12px; border-top: 1px solid var(--border);">
-            <button id="btn-cancel-confirm" class="btn btn-secondary btn-sm" style="min-width: 64px;">取消</button>
-            <button id="btn-ok-confirm" class="btn btn-danger btn-sm" style="min-width: 64px; background-color: var(--danger); color: var(--on-primary);">确定删除</button>
-          </div>
-        </div>
-      </div>
     </div>
   `;
 
@@ -638,38 +619,14 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
   const domainCookiesContainer = container.querySelector('#domain-cookies-container') as HTMLDivElement;
   const btnClearAllCookies = container.querySelector('#btn-clear-all-cookies') as HTMLButtonElement;
 
-  // Custom Confirm Modal
-  const confirmModal = container.querySelector('#confirm-modal') as HTMLDivElement;
-  const confirmModalTitleText = container.querySelector('#confirm-modal-title-text') as HTMLSpanElement;
-  const confirmModalMessage = container.querySelector('#confirm-modal-message') as HTMLParagraphElement;
-  const btnCloseConfirm = container.querySelector('#btn-close-confirm') as HTMLButtonElement;
-  const btnCancelConfirm = container.querySelector('#btn-cancel-confirm') as HTMLButtonElement;
-  const btnOkConfirm = container.querySelector('#btn-ok-confirm') as HTMLButtonElement;
-
   function showConfirmDialog(options: {
     title?: string;
     message: string;
     okText?: string;
     onConfirm: () => void;
   }) {
-    confirmModalTitleText.textContent = options.title || '操作确认';
-    confirmModalMessage.textContent = options.message;
-    btnOkConfirm.textContent = options.okText || '确定删除';
-    confirmModal.style.display = 'flex';
-
-    const close = () => {
-      confirmModal.style.display = 'none';
-      btnOkConfirm.onclick = null;
-      btnCancelConfirm.onclick = null;
-      btnCloseConfirm.onclick = null;
-    };
-
-    btnOkConfirm.onclick = () => {
-      close();
-      options.onConfirm();
-    };
-    btnCancelConfirm.onclick = close;
-    btnCloseConfirm.onclick = close;
+    void confirmAction({ title: options.title || '操作确认', message: options.message, confirmText: options.okText || '确定删除', destructive: true })
+      .then(confirmed => { if (confirmed) options.onConfirm(); });
   }
 
 

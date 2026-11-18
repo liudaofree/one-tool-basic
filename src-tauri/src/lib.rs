@@ -36,6 +36,9 @@ pub fn run() {
     .plugin(tauri_plugin_updater::Builder::new().build())
     .plugin(tauri_plugin_process::init())
     .setup(|app| {
+      use tauri::Manager;
+      let store = app.path().app_data_dir()?.join("downloads.json");
+      app.manage(std::sync::Arc::new(download::DownloadState::load(store)));
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()
@@ -47,7 +50,6 @@ pub fn run() {
       }
       Ok(())
     })
-    .manage(std::sync::Arc::new(download::DownloadState::default()))
     .invoke_handler(tauri::generate_handler![parse_mybatis_logs, send_http_request, download::download_list, download::download_add, download::download_control, download::download_open_folder, folder_picker::pick_download_folder, ai::save_ai_api_key, ai::delete_ai_api_key, ai::has_ai_api_key, ai::ai_chat_completion, ai::test_ai_connection])
     .run(tauri::generate_context!())
     .expect("error while building tauri application");

@@ -2321,3 +2321,8 @@ button, input, select, textarea { font-family: inherit; font-size: var(--text-si
 .plugin-list { padding:8px 20px; }
 .plugin-page-note { margin:8px 0; }
 .plugin-workspace { height:calc(100% - 190px); }
+.settings-page { max-width: 880px; margin: 0 auto; padding: 28px; display: grid; gap: 18px; }
+.settings-page h2, .settings-page h3 { margin: 0 0 10px; }
+.settings-page .download-panel { display: block; }
+.settings-page p { line-height: 1.6; }
+.settings-actions { display: flex; gap: 10px; margin: 16px 0; }

@@ -1,4 +1,5 @@
 import { getPlugins, installPlugin, loadPlugins, removePlugin } from '../utils/plugin';
+import { confirmAction } from '../utils/confirm-dialog';
 
 export function initPlugins(container: HTMLElement, showToast: (message: string) => void) {
   container.innerHTML = `
@@ -30,7 +31,10 @@ export function initPlugins(container: HTMLElement, showToast: (message: string)
       select.setAttribute('role', 'tab'); select.setAttribute('aria-selected', String(item.id === selectedId));
       select.onclick = () => { selectedId = item.id; render(); };
       const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn btn-ghost btn-sm'; remove.textContent = '卸载';
-      remove.onclick = () => { if (!window.confirm(`卸载 ${item.plugin.name}？`)) return; removePlugin(item.id); render(); showToast('插件已卸载'); };
+      remove.onclick = async () => {
+        if (!await confirmAction({ title: '卸载插件', message: `确定卸载「${item.plugin.name}」吗？`, confirmText: '卸载插件', destructive: true })) return;
+        removePlugin(item.id); render(); showToast('插件已卸载');
+      };
       row.append(select, remove); list.append(row);
     }
     window.dispatchEvent(new Event('one-tool-plugins-changed'));

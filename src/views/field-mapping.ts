@@ -2,9 +2,16 @@ import { parseJsonTree, renderJsonTree, type JsonNode } from '../utils/json-resp
 import { validateBusinessProfile, resolveBusinessFields, type BusinessProfile } from '../utils/field-mapping';
 import { generateBusinessFieldsFromJava } from '../utils/java-field-mapping';
 import { getPlugins } from '../utils/plugin';
+import { confirmAction } from '../utils/confirm-dialog';
 
 const STORAGE_KEY = 'json-business-profiles';
 type ListedProfile = { key: string; profile: BusinessProfile; source: string; editable: boolean };
+
+function pluginOverrideId(key: string): string {
+  let hash = 2166136261;
+  for (const char of key) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+  return `plugin-override-${(hash >>> 0).toString(16)}`;
+}
 
 function savedProfiles(): BusinessProfile[] {
   try {
@@ -47,17 +54,24 @@ export function initFieldMapping(container: HTMLElement, showToast: (message: st
   const lines = find<HTMLTextAreaElement>('#field-lines');
   let profiles: ListedProfile[] = [];
   let editingId = '';
+  let editingPluginKey = '';
   let root: JsonNode | null = null;
   let focusPath: ((path: string) => boolean) | undefined;
   let lastMatches: ReturnType<typeof resolveBusinessFields> = [];
   const selected = () => profiles.find(item => item.key === select.value);
   const refreshProfiles = () => {
     const previous = select.value;
+    const local = savedProfiles();
+    const localIds = new Set(local.map(profile => profile.id));
     profiles = [
-      ...getPlugins().flatMap(item => (item.plugin.fieldProfiles || []).map(profile => ({ key: `${item.id}:${profile.id}`, profile: validateBusinessProfile(profile), source: item.plugin.name, editable: false }))),
-      ...savedProfiles().map(profile => ({ key: `local:${profile.id}`, profile, source: '本地', editable: true })),
+      ...getPlugins().flatMap(item => (item.plugin.fieldProfiles || []).map(profile => ({ key: `${item.id}:${profile.id}`, profile: validateBusinessProfile(profile), source: item.plugin.name, editable: false }))).filter(item => !localIds.has(pluginOverrideId(item.key))),
+      ...local.map(profile => ({ key: `local:${profile.id}`, profile, source: '本地', editable: true })),
     ];
-    select.replaceChildren(new Option('选择映射配置', ''), ...profiles.map(item => new Option(`${item.profile.name} · ${item.source}`, item.key)));
+    select.replaceChildren(new Option('选择映射配置', ''), ...profiles.map(item => {
+      const option = new Option(item.profile.name, item.key);
+      option.title = item.source;
+      return option;
+    }));
     select.value = profiles.some(item => item.key === previous) ? previous : '';
     render();
   };
@@ -79,8 +93,9 @@ export function initFieldMapping(container: HTMLElement, showToast: (message: st
       results.append(button);
     }
   };
-  const openEditor = (profile?: BusinessProfile) => {
+  const openEditor = (profile?: BusinessProfile, pluginKey = '') => {
     editingId = profile?.id || '';
+    editingPluginKey = pluginKey;
     name.value = profile?.name || '';
     lines.value = profile?.fields.map(field => `${field.path} = ${field.label}`).join('\n') || '';
     editor.hidden = false; name.focus();
@@ -88,8 +103,8 @@ export function initFieldMapping(container: HTMLElement, showToast: (message: st
   find<HTMLButtonElement>('#field-new').onclick = () => openEditor();
   find<HTMLButtonElement>('#field-edit').onclick = () => {
     const item = selected(); if (!item) { showToast('请先选择映射配置'); return; }
-    openEditor(item.editable ? item.profile : { ...item.profile, id: '' });
-    if (!item.editable) showToast('插件配置将另存为本地副本');
+    openEditor(item.editable ? item.profile : { ...item.profile, id: pluginOverrideId(item.key) }, item.editable ? '' : item.key);
+    if (!item.editable) showToast('保存后将在本地覆盖此插件映射');
   };
   find<HTMLButtonElement>('#field-cancel').onclick = () => { editor.hidden = true; };
   find<HTMLButtonElement>('#field-save').onclick = () => {
@@ -103,13 +118,14 @@ export function initFieldMapping(container: HTMLElement, showToast: (message: st
       const profile = validateBusinessProfile({ id, name: name.value, fields });
       const next = savedProfiles().filter(item => item.id !== id);
       next.push(profile); localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      editor.hidden = true; refreshProfiles(); select.value = `local:${id}`; render(); showToast('映射配置已保存');
+      editor.hidden = true; refreshProfiles(); select.value = `local:${id}`; render(); showToast(editingPluginKey ? '插件映射已在本地覆盖' : '映射配置已保存');
+      editingPluginKey = '';
     } catch (error) { showToast(error instanceof Error ? error.message : String(error)); }
   };
-  find<HTMLButtonElement>('#field-delete').onclick = () => {
+  find<HTMLButtonElement>('#field-delete').onclick = async () => {
     const item = selected(); if (!item) return;
     if (!item.editable) { showToast('插件提供的配置不能在基础版删除'); return; }
-    if (!window.confirm(`删除映射配置“${item.profile.name}”？`)) return;
+    if (!await confirmAction({ title: '删除映射配置', message: `确定删除“${item.profile.name}”吗？`, confirmText: '删除配置', destructive: true })) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(savedProfiles().filter(profile => profile.id !== item.profile.id)));
     refreshProfiles(); showToast('映射配置已删除');
   };

@@ -2,6 +2,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { AI_LOCAL_TOOLS, runAiLocalTool } from '../utils/ai-local-tools';
 import { getPlugins, getPluginForTool, loadPlugins } from '../utils/plugin';
 import { renderAiMarkdown } from '../utils/ai-markdown';
+import { confirmAction } from '../utils/confirm-dialog';
 
 type Provider = 'deepseek' | 'minimax-cn' | 'minimax-intl';
 type AiProfile = { id: string; name: string; provider: Provider; model: string };
@@ -25,7 +26,7 @@ function loadProfiles(): AiProfile[] {
 export function initAiAssistant(container: HTMLElement, showToast: (message: string) => void): void {
   container.innerHTML = `<div class="ai-page">
     <div class="ai-toolbar"><div><h2>AI 助手</h2><p>询问如何使用 One Tool，或让助手调用本地工具分析内容。</p></div><div class="ai-toolbar-actions"><select id="ai-profile-select" aria-label="AI 配置"></select><button id="ai-settings-button" class="btn btn-secondary" type="button">模型配置</button><button id="ai-clear" class="btn btn-ghost" type="button">清空对话</button></div></div>
-    <div id="ai-messages" class="ai-messages" role="log"><div class="ai-empty">可以直接提问，例如：这段 SQL 日志可以还原吗？</div></div>
+    <div id="ai-messages" class="ai-messages" role="log"><div class="ai-empty"><div class="ai-empty-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="m24 6 3.8 12.2L40 22l-12.2 3.8L24 38l-3.8-12.2L8 22l12.2-3.8L24 6z"/><path d="m38 34 1.2 3.8L43 39l-3.8 1.2L38 44l-1.2-3.8L33 39l3.8-1.2L38 34z"/></svg></div><strong>让工具帮你分析内容</strong><p>可提问，也可粘贴 SQL 日志、JSON 或建表语句，让助手调用本地工具解释结果。</p></div></div>
     <div class="ai-composer"><textarea id="ai-prompt" rows="3" placeholder="描述你的问题，或粘贴 JSON、MyBatis 日志、建表语句。Ctrl+Enter 发送"></textarea><div class="ai-composer-bottom"><span>发送的文本和本地工具结果会传给所选 AI 服务商，请先检查敏感数据。</span><button id="ai-send" class="btn btn-primary" type="button">发送</button></div></div>
     <div id="ai-settings" class="modal-overlay" style="display:none"><div class="modal-card ai-settings-card"><div class="modal-header"><h3>模型配置</h3><button id="ai-settings-close" class="btn-close" type="button">✕</button></div><div class="modal-body ai-settings-body"><label>配置名称<input id="ai-config-name" type="text" placeholder="如 DeepSeek 日常助手" /></label><label>服务商<select id="ai-config-provider"><option value="deepseek">DeepSeek</option><option value="minimax-cn">MiniMax 国内</option><option value="minimax-intl">MiniMax 国际</option></select></label><label>模型名称<input id="ai-config-model" type="text" /></label><label>API Key<input id="ai-config-key" type="password" placeholder="已保存的 Key 不会回显；留空则保留原 Key" autocomplete="off" /></label><p>API Key 在 Windows 上由当前用户加密保存在本机，在 macOS 上保存在系统钥匙串。测试连接会发送一条简短请求，可能产生少量费用。</p><div id="ai-settings-status" role="status"></div></div><div class="modal-footer"><button id="ai-config-new" class="btn btn-secondary" type="button">新建</button><button id="ai-config-delete" class="btn btn-ghost" type="button">删除</button><button id="ai-config-test" class="btn btn-secondary" type="button">测试连接</button><button id="ai-config-save" class="btn btn-primary" type="button">保存</button></div></div></div>
   </div>`;
@@ -114,7 +115,8 @@ export function initAiAssistant(container: HTMLElement, showToast: (message: str
     finally { saveButton.disabled = false; }
   };
   deleteButton.onclick = async () => {
-    const profile = currentProfile(); if (!profile || !window.confirm(`删除 AI 配置「${profile.name}」？`)) return;
+    const profile = currentProfile();
+    if (!profile || !await confirmAction({ title: '删除 AI 配置', message: `确定删除「${profile.name}」及其本机保存的 API Key 吗？`, confirmText: '删除配置', destructive: true })) return;
     try {
       await invoke('delete_ai_api_key', { profileId: profile.id });
       localStorage.setItem(STORAGE_KEY, JSON.stringify(loadProfiles().filter(item => item.id !== profile.id)));

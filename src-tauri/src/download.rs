@@ -1,27 +1,72 @@
 use reqwest::header::{CONTENT_RANGE, ETAG, IF_RANGE, LAST_MODIFIED, RANGE};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs::{self, OpenOptions}, io::{Read, Seek, SeekFrom, Write}, path::{Path, PathBuf}, sync::{Arc, Mutex, atomic::{AtomicU64, Ordering}}, time::{Duration, Instant}};
 use tauri::State;
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadTask {
     id: u64, url: String, path: String, status: String,
     completed: u64, total: Option<u64>, speed: u64, connections: usize,
     error: Option<String>, validator: Option<String>,
-    #[serde(skip)]
+    #[serde(default)]
     segments: Vec<Segment>,
     #[serde(skip)]
     segment_speeds: Vec<u64>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct Segment { start: u64, end: u64, done: u64 }
 
 #[derive(Default)]
 pub struct DownloadState {
     next_id: AtomicU64,
     tasks: Mutex<HashMap<u64, DownloadTask>>,
+    store: Option<PathBuf>,
+    save_lock: Mutex<()>,
+}
+
+impl DownloadState {
+    pub fn load(store: PathBuf) -> Self {
+        let readable = if store.exists() { store.clone() } else { store.with_extension("json.bak") };
+        let saved: Vec<DownloadTask> = fs::read(readable).ok()
+            .and_then(|data| serde_json::from_slice(&data).ok()).unwrap_or_default();
+        let mut tasks = HashMap::new();
+        let mut next_id = 0;
+        for mut task in saved {
+            next_id = next_id.max(task.id);
+            task.speed = 0;
+            task.segment_speeds = vec![0; task.segments.len()];
+            let path = Path::new(&task.path);
+            if task.status != "completed" {
+                task.status = "paused".into();
+                if !part_path(path).is_file() {
+                    task.status = "error".into();
+                    task.error = Some("未找到未完成文件，请检查保存目录".into());
+                } else if task.segments.is_empty() {
+                    task.completed = fs::metadata(part_path(path)).map(|m| m.len()).unwrap_or(0);
+                }
+            }
+            tasks.insert(task.id, task);
+        }
+        Self { next_id: AtomicU64::new(next_id), tasks: Mutex::new(tasks), store: Some(store), save_lock: Mutex::new(()) }
+    }
+
+    fn save(&self) -> Result<(), String> {
+        let Some(path) = &self.store else { return Ok(()); };
+        let _guard = self.save_lock.lock().map_err(|_| "任务存储不可用")?;
+        let tasks: Vec<_> = self.tasks.lock().map_err(|_| "任务状态不可用")?.values().cloned().collect();
+        let data = serde_json::to_vec(&tasks).map_err(|e| e.to_string())?;
+        if let Some(parent) = path.parent() { fs::create_dir_all(parent).map_err(|e| e.to_string())?; }
+        let temporary = path.with_extension("json.tmp");
+        fs::write(&temporary, data).map_err(|e| e.to_string())?;
+        let backup = path.with_extension("json.bak");
+        if path.exists() {
+            if backup.exists() { fs::remove_file(&backup).map_err(|e| e.to_string())?; }
+            fs::rename(path, &backup).map_err(|e| e.to_string())?;
+        }
+        fs::rename(&temporary, path).map_err(|e| e.to_string())
+    }
 }
 
 fn part_path(path: &Path) -> PathBuf {
@@ -241,11 +286,13 @@ fn launch(state: Arc<DownloadState>, id: u64) {
                 t.status = "error".into(); t.error = Some(error); t.speed = 0;
             } });
         }
+        let _ = state.save();
     });
 }
 
 #[tauri::command]
 pub fn download_list(state: State<'_, Arc<DownloadState>>) -> Vec<DownloadTask> {
+    let _ = state.save();
     let mut tasks: Vec<_> = state.tasks.lock().map(|t| t.values().cloned().collect()).unwrap_or_default();
     tasks.sort_by_key(|t: &DownloadTask| std::cmp::Reverse(t.id));
     tasks
@@ -278,6 +325,7 @@ pub fn download_add(state: State<'_, Arc<DownloadState>>, url: String, directory
         id, url: parsed.to_string(), path: path.to_string_lossy().into_owned(), status: "active".into(),
         completed: 0, total: None, speed: 0, connections: 1, error: None, validator: None, segments: Vec::new(), segment_speeds: Vec::new(),
     });
+    state.save()?;
     launch(state.inner().clone(), id);
     Ok(id)
 }
@@ -291,6 +339,8 @@ pub fn download_control(state: State<'_, Arc<DownloadState>>, id: u64, action: S
         ("resume", "paused" | "error") => { task.status = "active".into(); task.error = None; launch(state.inner().clone(), id); }
         _ => return Err("当前状态不能执行此操作".into()),
     }
+    drop(tasks);
+    state.save()?;
     Ok(())
 }
 
