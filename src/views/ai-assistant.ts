@@ -1,6 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { AI_LOCAL_TOOLS, runAiLocalTool } from '../utils/ai-local-tools';
-import { getPlugin } from '../utils/plugin';
+import { getPlugins, getPluginForTool, loadPlugins } from '../utils/plugin';
 import { renderAiMarkdown } from '../utils/ai-markdown';
 
 type Provider = 'deepseek' | 'minimax-cn' | 'minimax-intl';
@@ -132,8 +132,9 @@ export function initAiAssistant(container: HTMLElement, showToast: (message: str
     prompt.value = ''; chat.push({ role: 'user', content: text }); addMessage('user', text);
     busy = true; sendButton.disabled = true; select.disabled = true; clearButton.disabled = true; sendButton.textContent = '思考中…';
     try {
+      await loadPlugins().catch(() => undefined);
       for (let round = 0; round < 4; round++) {
-        const response = await invoke<ChatResponse>('ai_chat_completion', { request: { profileId: profile.id, provider: profile.provider, model: profile.model, messages: chat, tools: [...AI_LOCAL_TOOLS, ...(getPlugin()?.aiTools || [])] } });
+        const response = await invoke<ChatResponse>('ai_chat_completion', { request: { profileId: profile.id, provider: profile.provider, model: profile.model, messages: chat, tools: [...AI_LOCAL_TOOLS, ...getPlugins().flatMap(item => item.plugin.aiTools || [])] } });
         const message = response.message;
         const calls = message.tool_calls || [];
         chat.push({ role: 'assistant', content: message.content || null, ...(calls.length ? { tool_calls: calls } : {}), ...(message.reasoning_content ? { reasoning_content: message.reasoning_content } : {}) });
@@ -142,8 +143,8 @@ export function initAiAssistant(container: HTMLElement, showToast: (message: str
           let result: unknown;
           try {
             const args = JSON.parse(call.function.arguments || '{}');
-            const plugin = getPlugin();
-            result = plugin?.aiTools?.some(tool => tool.function.name === call.function.name)
+            const plugin = getPluginForTool(call.function.name)?.plugin;
+            result = plugin
               ? await plugin.runAiTool!(call.function.name, args)
               : await runAiLocalTool(call.function.name, args);
           }
@@ -154,7 +155,7 @@ export function initAiAssistant(container: HTMLElement, showToast: (message: str
             : serialized;
           chat.push({ role: 'tool', tool_call_id: call.id, content: toolContent });
           const row = addMessage('tool', `${call.function.name} 已执行${result && typeof result === 'object' && 'error' in result ? `：${(result as { error: string }).error}` : '，结果已交给助手解释'}`);
-          const target = call.function.name === 'restore_mybatis_sql' ? 'sql-restorer' : call.function.name === 'convert_json' ? 'json-converter' : getPlugin()?.aiTools?.some(tool => tool.function.name === call.function.name) ? 'plugins' : call.function.name.includes('mysql') ? 'code-generator' : '';
+          const target = call.function.name === 'restore_mybatis_sql' ? 'sql-restorer' : call.function.name === 'convert_json' ? 'json-converter' : getPluginForTool(call.function.name) ? 'plugins' : call.function.name.includes('mysql') ? 'code-generator' : '';
           if (target) {
             const button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-ghost btn-sm'; button.textContent = '打开对应工具';
             button.onclick = () => document.querySelector<HTMLElement>(`.sidebar-nav .nav-item[data-tool="${target}"]`)?.click();

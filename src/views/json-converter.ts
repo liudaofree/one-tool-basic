@@ -1,3 +1,4 @@
+import { initFieldMapping } from './field-mapping';
 import {
   formatJson, minifyJson, escapeJsonString, unescapeJsonString, toUnicode, fromUnicode,
   jsonToJavaBean, javaBeanToJson, jsonToYaml, yamlToJson, jsonToXml, xmlToJson,
@@ -6,15 +7,16 @@ import {
 } from '../utils/json-converter';
 import { findJsonFields, parseJsonTree, renderJsonTree, type JsonNode } from '../utils/json-response';
 
-type Tab = 'format' | 'java' | 'yaml' | 'xml' | 'csv' | 'escape' | 'unicode';
+type Tab = 'mapping' | 'format' | 'java' | 'yaml' | 'xml' | 'csv' | 'escape' | 'unicode';
 const tabs: { id: Tab; label: string }[] = [
-  { id: 'format', label: '美化 / 压缩' }, { id: 'java', label: 'JSON 转换成 Java Bean' },
+  { id: 'format', label: '美化 / 压缩' }, { id: 'mapping', label: '字段映射' }, { id: 'java', label: 'JSON 转换成 Java Bean' },
   { id: 'yaml', label: 'YAML 互转' }, { id: 'xml', label: 'XML 互转' },
   { id: 'csv', label: 'CSV 互转' }, { id: 'escape', label: '转义 / 去转义' },
   { id: 'unicode', label: 'Unicode' },
 ];
 const javaOptions: JavaBeanOptions = { className: 'ExampleDto', useLombok: true, useJackson: true, useCamelCase: true };
 const operations: Record<Tab, { value: string; label: string; convert: (text: string) => string }[]> = {
+  mapping: [],
   format: [
     { value: 'format', label: '美化 JSON', convert: formatJson },
     { value: 'minify', label: '压缩 JSON', convert: minifyJson },
@@ -53,12 +55,16 @@ export function initJsonConverter(container: HTMLElement, showToast: (message: s
         <div class="json-tabs">${tabs.map(item => `<button class="json-tab-btn${item.id === tab ? ' active' : ''}" data-tab="${item.id}" type="button">${item.label}</button>`).join('')}</div>
         <button id="json-btn-sample" class="btn btn-secondary btn-sm" type="button">载入示例</button><button id="json-btn-clear" class="btn btn-ghost btn-sm" type="button">清空</button>
       </div>
-      <div class="json-subbar"><label class="subbar-label">操作：<select id="json-operation" class="subbar-input"></select></label><button id="json-run" class="btn btn-primary btn-sm" type="button">转换</button><div id="java-options" class="subbar-group" hidden><label>类名 <input id="java-class-name" class="subbar-input" value="ExampleDto" /></label><label><input id="java-lombok" type="checkbox" checked /> Lombok</label><label><input id="java-jackson" type="checkbox" checked /> JsonProperty</label><label><input id="java-camel" type="checkbox" checked /> 小驼峰</label></div></div>
+      <div id="json-standard" class="json-standard"><div class="json-subbar"><label class="subbar-label">操作：<select id="json-operation" class="subbar-input"></select></label><button id="json-run" class="btn btn-primary btn-sm" type="button">转换</button><div id="java-options" class="subbar-group" hidden><label>类名 <input id="java-class-name" class="subbar-input" value="ExampleDto" /></label><label><input id="java-lombok" type="checkbox" checked /> Lombok</label><label><input id="java-jackson" type="checkbox" checked /> JsonProperty</label><label><input id="java-camel" type="checkbox" checked /> 小驼峰</label></div></div>
       <main class="workspace">
         <section class="pane pane-left"><div class="pane-header"><div class="pane-title">输入内容 <span id="json-input-stat" class="badge">0 字符</span></div><button id="json-paste" class="btn btn-ghost btn-sm" type="button">粘贴</button></div><div class="pane-body"><textarea id="json-input-text" class="log-textarea" spellcheck="false" placeholder="在此粘贴或输入内容..."></textarea></div></section>
         <section class="pane pane-right"><div class="pane-header"><div class="pane-title">转换结果 <span id="json-output-stat" class="badge">就绪</span></div><button id="json-copy" class="btn btn-primary btn-sm" type="button">复制结果</button></div><div class="pane-body json-converter-output"><div id="json-result-toolbar" class="resp-json-toolbar" hidden><input id="json-field-query" class="json-field-query" type="search" placeholder="查找字段名或路径" /><button id="json-expand" class="btn btn-ghost btn-sm" type="button">全部展开</button><button id="json-collapse" class="btn btn-ghost btn-sm" type="button">全部折叠</button><button id="json-toggle-raw" class="btn btn-secondary btn-sm" type="button">查看原文</button></div><div id="json-field-results" class="json-field-results" hidden></div><div id="json-result-tree" class="resp-json-tree" hidden></div><textarea id="json-output-text" class="log-textarea" spellcheck="false" readonly></textarea></div></section>
-      </main>
+      </main></div>
+      <div id="json-field-mapping-host" hidden></div>
     </div>`;
+  const standard = container.querySelector<HTMLElement>('#json-standard')!;
+  const mappingHost = container.querySelector<HTMLElement>('#json-field-mapping-host')!;
+  initFieldMapping(mappingHost, showToast);
   const input = container.querySelector<HTMLTextAreaElement>('#json-input-text')!;
   const output = container.querySelector<HTMLTextAreaElement>('#json-output-text')!;
   const select = container.querySelector<HTMLSelectElement>('#json-operation')!;
@@ -109,7 +115,10 @@ export function initJsonConverter(container: HTMLElement, showToast: (message: s
   container.querySelectorAll<HTMLButtonElement>('.json-tab-btn').forEach(button => button.addEventListener('click', () => {
     tab = button.dataset.tab as Tab;
     container.querySelectorAll('.json-tab-btn').forEach(item => item.classList.toggle('active', item === button));
-    renderOptions(); run();
+    standard.hidden = tab === 'mapping'; mappingHost.hidden = tab !== 'mapping';
+    container.querySelector<HTMLElement>('#json-btn-sample')!.hidden = tab === 'mapping';
+    container.querySelector<HTMLElement>('#json-btn-clear')!.hidden = tab === 'mapping';
+    if (tab !== 'mapping') { renderOptions(); run(); }
   }));
   input.addEventListener('input', () => { inputStat.textContent = `${input.value.length} 字符`; run(); });
   select.addEventListener('change', run);
