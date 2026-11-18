@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 d/
+cl-check.c
+cl-check.obj
+curve25519.obj
 
 # Editor directories and files
 .vscode/*
