@@ -1,12 +1,14 @@
 import { getVersion } from '@tauri-apps/api/app';
 import { isTauri } from '@tauri-apps/api/core';
 import { confirmAction } from '../utils/confirm-dialog';
+import { UPDATE_PROXY_KEY, normalizeUpdateProxy } from '../utils/update-proxy';
 
 const CONFIG_KEYS = [
   'one-tool-theme', 'onetool_http_saved', 'onetool_http_environments',
   'onetool_http_active_env_id', 'onetool_code_generator_config',
   'json-business-profiles', 'onetool_ai_profiles', 'onetool_ai_active_profile',
   'one-tool:download-directory',
+  UPDATE_PROXY_KEY,
 ];
 const COOKIE_KEY = 'onetool_http_domain_cookies';
 type Backup = { format: 'one-tool-settings'; version: 1; createdAt: string; data: Record<string, string> };
@@ -15,8 +17,8 @@ export function initSettings(container: HTMLElement, showToast: (message: string
   container.innerHTML = `<div class="settings-page">
     <h2>偏好与数据</h2>
     <section class="download-panel"><h3>外观</h3><p>选择应用主题</p><select id="settings-theme"><option value="light">浅色</option><option value="dark">深色</option></select></section>
-    <section class="download-panel"><h3>更新与版本</h3><p id="settings-version">版本信息加载中</p><button id="settings-update" class="btn btn-secondary" type="button">检查更新</button></section>
-    <section class="download-panel"><h3>配置备份与迁移</h3><p>包含接口收藏、环境、代码生成设置、字段映射、主题、下载目录和 AI 模型名称。系统保存的 AI Key、插件和下载任务不包含在备份中。</p>
+    <section class="download-panel"><h3>更新与版本</h3><p id="settings-version">版本信息加载中</p><p>浏览器能下载、应用更新却报 403 时，可填写浏览器所用的本机代理地址。留空时使用系统网络设置。</p><div class="settings-actions"><input id="settings-update-proxy" type="text" placeholder="http://127.0.0.1:7890" aria-label="更新代理地址"><button id="settings-save-proxy" class="btn btn-secondary" type="button">保存代理</button><button id="settings-update" class="btn btn-secondary" type="button">检查更新</button></div></section>
+    <section class="download-panel"><h3>配置备份与迁移</h3><p>包含接口收藏、环境、代码生成设置、字段映射、主题、下载目录、更新代理和 AI 模型名称。系统保存的 AI Key、插件和下载任务不包含在备份中。</p>
       <label><input id="settings-cookies" type="checkbox"> 包含 Cookie（备份文件会含明文凭据）</label>
       <div class="settings-actions"><button id="settings-export" class="btn btn-primary" type="button">导出备份</button><button id="settings-import" class="btn btn-secondary" type="button">导入备份</button></div>
       <input id="settings-file" type="file" accept=".json,application/json" hidden><p>导入会覆盖备份中同名配置，并重新加载界面；请先导出当前配置。</p></section>
@@ -30,6 +32,17 @@ export function initSettings(container: HTMLElement, showToast: (message: string
   theme.onchange = () => window.dispatchEvent(new CustomEvent('one-tool-set-theme', { detail: theme.value }));
   get<HTMLElement>('settings-version').textContent = `当前版本：${isTauri() ? '读取中' : '浏览器开发模式'}`;
   if (isTauri()) void getVersion().then(version => { get<HTMLElement>('settings-version').textContent = `当前版本：v${version}`; });
+  const proxyInput = get<HTMLInputElement>('settings-update-proxy');
+  proxyInput.value = localStorage.getItem(UPDATE_PROXY_KEY) || '';
+  get<HTMLButtonElement>('settings-save-proxy').onclick = () => {
+    try {
+      const proxy = normalizeUpdateProxy(proxyInput.value);
+      if (proxy) localStorage.setItem(UPDATE_PROXY_KEY, proxy);
+      else localStorage.removeItem(UPDATE_PROXY_KEY);
+      window.dispatchEvent(new Event('one-tool-update-proxy-changed'));
+      showToast(proxy ? '更新代理已保存' : '已恢复使用系统网络设置');
+    } catch (error) { showToast(error instanceof Error ? error.message : String(error)); }
+  };
   get<HTMLButtonElement>('settings-update').onclick = () => document.getElementById('update-button')?.click();
   if (!isTauri()) get<HTMLButtonElement>('settings-update').disabled = true;
   get<HTMLButtonElement>('settings-export').onclick = () => {
@@ -56,7 +69,8 @@ export function initSettings(container: HTMLElement, showToast: (message: string
       if (entries.some(([key, item]) => !allowed.has(key) || typeof item !== 'string')) throw new Error('备份包含未知配置');
       for (const [key, item] of entries) {
         if (key === 'one-tool-theme' && item !== 'light' && item !== 'dark') throw new Error('主题配置无效');
-        if (key !== 'one-tool-theme' && key !== 'onetool_http_active_env_id' && key !== 'onetool_ai_active_profile' && key !== 'one-tool:download-directory') JSON.parse(item);
+        if (key === UPDATE_PROXY_KEY) normalizeUpdateProxy(item);
+        else if (key !== 'one-tool-theme' && key !== 'onetool_http_active_env_id' && key !== 'onetool_ai_active_profile' && key !== 'one-tool:download-directory') JSON.parse(item);
       }
       if (!await confirmAction({ title: '导入配置备份', message: `将导入 ${entries.length} 项配置并覆盖同名数据，随后重新加载界面。`, confirmText: '导入并覆盖' })) return;
       for (const [key, item] of entries) localStorage.setItem(key, item);

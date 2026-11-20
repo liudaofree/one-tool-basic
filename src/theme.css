@@ -285,6 +285,8 @@ select option { background-color: var(--bg-primary); color: var(--text-main); }
 .settings-page .download-panel { padding: 20px 22px; }
 .settings-page .download-panel h3 { font-size: 14px; }
 .settings-page .download-panel p { max-width: 660px; color: var(--text-muted); font-size: 12px; }
+.settings-page #settings-update-proxy { flex: 1 1 220px; min-width: 0; padding: 8px 10px; border: 1px solid var(--border-light); border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-main); }
+.settings-page .settings-actions { flex-wrap: wrap; align-items: center; }
 .plugin-page { padding: 24px; }
 #view-plugins { min-height: 0; flex-direction: column; overflow: hidden; }
 .plugin-page { flex: none; padding: 18px 24px 8px; }
