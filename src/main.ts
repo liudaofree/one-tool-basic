@@ -12,6 +12,7 @@ import { initSettings } from './views/settings';
 import { installButtonIcons } from './utils/button-icons';
 import { installThemedSelects } from './utils/themed-select';
 import { initAutoUpdate } from './utils/auto-update';
+import { installAppContextMenu } from './utils/context-menu';
 
 type ToolId = 'http-client' | 'sql-restorer' | 'json-converter' | 'download' | 'ai-assistant' | 'plugins' | 'settings';
 
@@ -205,4 +206,5 @@ navItems.forEach((item) => {
 
 installButtonIcons();
 installThemedSelects();
+installAppContextMenu(showToast);
 initAutoUpdate(document.getElementById('update-button') as HTMLButtonElement, showToast);

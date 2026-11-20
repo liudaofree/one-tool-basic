@@ -13,6 +13,7 @@ import { prepareHttpRequest, requestPreview, enabledFormItems } from '../utils/h
 import { normalizeDomain } from '../utils/http-cookies';
 import { queryFromUrl, updateUrlQuery, urlOnlyPayload } from '../utils/http-query';
 import { confirmAction } from '../utils/confirm-dialog';
+import { closeContextMenu, showContextMenu } from '../utils/context-menu';
 import type { SavedRequest } from '../types/http';
 
 const COMMON_HEADER_SUGGESTIONS = [
@@ -649,27 +650,14 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
     renderDrawerContent();
   });
 
-  let savedContextMenu: HTMLDivElement | null = null;
-  const closeSavedContextMenu = () => {
-    savedContextMenu?.remove();
-    savedContextMenu = null;
-    document.removeEventListener('pointerdown', closeContextOnOutside);
-    document.removeEventListener('keydown', closeContextOnEscape);
-  };
-  const closeContextOnOutside = (event: PointerEvent) => {
-    if (!savedContextMenu?.contains(event.target as Node)) closeSavedContextMenu();
-  };
-  const closeContextOnEscape = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') closeSavedContextMenu();
-  };
   const editSavedRequest = (item: SavedRequest) => {
-    closeSavedContextMenu();
+    closeContextMenu();
     loadPayloadIntoUi(item.payload, item.id);
     showToast(`正在编辑「${item.name}」，修改后点击“保存修改”`);
     urlInput.focus();
   };
   const deleteSavedRequest = async (item: SavedRequest) => {
-    closeSavedContextMenu();
+    closeContextMenu();
     if (!await confirmAction({ title: '删除收藏的请求', message: `确定删除「${item.name}」吗？`, confirmText: '删除请求', destructive: true })) return;
     Storage.deleteSavedRequest(item.id);
     if (activeSavedRequestId === item.id) setActiveSavedRequest(null);
@@ -677,21 +665,10 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
     showToast(`已删除接口: ${item.name}`);
   };
   const openSavedContextMenu = (event: MouseEvent, item: SavedRequest) => {
-    event.preventDefault();
-    closeSavedContextMenu();
-    const menu = document.createElement('div');
-    menu.className = 'http-saved-context-menu';
-    menu.setAttribute('role', 'menu');
-    menu.innerHTML = '<button type="button" role="menuitem">编辑请求</button><button type="button" role="menuitem" class="danger">删除收藏</button>';
-    menu.querySelectorAll('button')[0].onclick = () => editSavedRequest(item);
-    menu.querySelectorAll('button')[1].onclick = () => { void deleteSavedRequest(item); };
-    document.body.append(menu);
-    savedContextMenu = menu;
-    menu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - menu.offsetWidth - 8))}px`;
-    menu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - menu.offsetHeight - 8))}px`;
-    document.addEventListener('pointerdown', closeContextOnOutside);
-    document.addEventListener('keydown', closeContextOnEscape);
-    menu.querySelector('button')?.focus();
+    showContextMenu(event, [
+      { label: '编辑请求', action: () => editSavedRequest(item) },
+      { label: '删除收藏', action: () => deleteSavedRequest(item), danger: true },
+    ]);
   };
 
   function renderDrawerContent() {
@@ -739,6 +716,11 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
           Storage.deleteHistoryItem(item.id);
           renderDrawerContent();
         });
+
+        div.addEventListener('contextmenu', event => showContextMenu(event, [
+          { label: '载入请求', action: () => { loadPayloadIntoUi(item.payload); showToast(`已载入历史: ${item.method} ${item.url}`); } },
+          { label: '删除记录', action: () => { Storage.deleteHistoryItem(item.id); renderDrawerContent(); }, danger: true },
+        ]));
 
         drawerContent.appendChild(div);
       });
