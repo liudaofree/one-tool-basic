@@ -18,6 +18,17 @@ const saved = new Map();
 globalThis.localStorage = { getItem: k => saved.get(k) ?? null, setItem: (k, v) => saved.set(k, v), removeItem: k => saved.delete(k) };
 const kv = (key, value, enabled = true) => ({ key, value, enabled });
 const cookie = (name, value, extra = {}) => ({ id: name, name, value, domain: 'example.com', path: '/', hostOnly: true, ...extra });
+test('editing a saved request replaces its payload without creating a second entry', () => {
+  saved.clear();
+  const original = Storage.saveRequest('查询订单', { method: 'GET', url: 'https://example.com/orders', params: [kv('page', '1')] }, '订单');
+  Storage.updateSavedRequest(original.id, { name: '查询订单详情', group: '接口', payload: { method: 'POST', url: 'https://example.com/orders/1', body_type: 'json', body_content: '{"ok":true}' } });
+  const requests = Storage.getSavedRequests();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].id, original.id);
+  assert.equal(requests[0].name, '查询订单详情');
+  assert.equal(requests[0].group, '接口');
+  assert.deepEqual(requests[0].payload, { method: 'POST', url: 'https://example.com/orders/1', body_type: 'json', body_content: '{"ok":true}' });
+});
 test('jar matches host-only/domain, path boundary, secure and expiry', () => {
   const map = { 'example.com': [cookie('host', '1'), cookie('domain', '2', { hostOnly: false }), cookie('api', '3', { path: '/api' }), cookie('secure', '4', { secure: true }), cookie('old', '5', { expires: '2000-01-01' })] };
   assert.deepEqual(cookies.cookiesForUrl(map, 'http://example.com/apix').map(c => c.name), ['host', 'domain']);

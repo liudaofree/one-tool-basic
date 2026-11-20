@@ -135,6 +135,13 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .btn-sm .button-icon { width: 14px; height: 14px; flex-basis: 14px; }
 .btn-close .button-icon, .btn-kv-del .button-icon, .drawer-del-btn .button-icon,
 .drawer-action-icon-btn .button-icon, .cookie-pill-del .button-icon { width: 15px; height: 15px; }
+.drawer-item.selected { border-color: var(--primary); background: var(--primary-soft); }
+.drawer-item-actions { position: static; opacity: 1; justify-content: flex-end; margin-top: 2px; }
+.drawer-action-icon-btn { min-height: 24px; padding: 2px 6px; font-size: 11px; }
+.http-saved-context-menu { position: fixed; z-index: 10001; min-width: 144px; padding: 4px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-primary); box-shadow: var(--shadow); }
+.http-saved-context-menu button { display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 4px; background: transparent; color: var(--text-main); text-align: left; font: inherit; font-size: 12px; cursor: pointer; }
+.http-saved-context-menu button:hover, .http-saved-context-menu button:focus-visible { background: var(--primary-soft); outline: none; }
+.http-saved-context-menu button.danger:hover, .http-saved-context-menu button.danger:focus-visible { color: var(--danger); background: rgba(239, 68, 68, .12); }
 .theme-switch .button-icon { width: 16px; height: 16px; flex-basis: 16px; }
 
 /* Typography: one scale for chrome and controls, with clear content hierarchy. */

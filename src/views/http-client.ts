@@ -13,6 +13,7 @@ import { prepareHttpRequest, requestPreview, enabledFormItems } from '../utils/h
 import { normalizeDomain } from '../utils/http-cookies';
 import { queryFromUrl, updateUrlQuery, urlOnlyPayload } from '../utils/http-query';
 import { confirmAction } from '../utils/confirm-dialog';
+import type { SavedRequest } from '../types/http';
 
 const COMMON_HEADER_SUGGESTIONS = [
   'Accept',
@@ -45,7 +46,7 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
   let importedTimeout: number | undefined;
   let lastSentRequest: HttpRequestPayload | undefined;
   let lastResponse: HttpResponsePayload | null = null;
-  let editingSavedId: string | null = null;
+  let activeSavedRequestId: string | null = null;
 
 
   // Render Shell
@@ -395,27 +396,6 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
         </div>
       </div>
 
-      <!-- Rename / Move Group Modal -->
-      <div id="rename-modal" class="modal-overlay" style="display: none;">
-        <div class="modal-card">
-          <div class="modal-header">
-            <h3>编辑接口信息</h3>
-            <button class="btn-close modal-close-btn">✕</button>
-          </div>
-          <div class="modal-body">
-            <p class="modal-tip">接口名称：</p>
-            <input type="text" id="rename-name-input" class="modal-input" />
-            <p class="modal-tip" style="margin-top: 12px;">所属分组：</p>
-            <div class="group-combobox"><input type="text" id="rename-group-input" class="modal-input" role="combobox" aria-autocomplete="list" aria-controls="rename-group-options" aria-expanded="false" aria-label="所属分组" /><button id="rename-group-trigger" class="group-combobox-trigger" type="button" aria-label="选择已有分组">⌄</button><div id="rename-group-options" class="group-combobox-options" role="listbox" hidden></div></div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-ghost modal-close-btn">取消</button>
-            <button id="btn-confirm-rename" class="btn btn-primary">保存修改</button>
-          </div>
-        </div>
-      </div>
-
-
       <!-- Env Manager Modal (Multi-Environment Groups Support) -->
       <div id="env-modal" class="modal-overlay" style="display: none;">
         <div class="modal-card" style="max-width: 760px; width: 94%;">
@@ -595,13 +575,6 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
   const saveGroupTrigger = container.querySelector('#save-group-trigger') as HTMLButtonElement;
   const btnConfirmSave = container.querySelector('#btn-confirm-save') as HTMLButtonElement;
 
-  const renameModal = container.querySelector('#rename-modal') as HTMLDivElement;
-  const renameNameInput = container.querySelector('#rename-name-input') as HTMLInputElement;
-  const renameGroupInput = container.querySelector('#rename-group-input') as HTMLInputElement;
-  const renameGroupMenu = container.querySelector('#rename-group-options') as HTMLDivElement;
-  const renameGroupTrigger = container.querySelector('#rename-group-trigger') as HTMLButtonElement;
-  const btnConfirmRename = container.querySelector('#btn-confirm-rename') as HTMLButtonElement;
-
   const envModal = container.querySelector('#env-modal') as HTMLDivElement;
   const btnCreateNewEnv = container.querySelector('#btn-create-new-env') as HTMLButtonElement;
   const envGroupNavList = container.querySelector('#env-group-nav-list') as HTMLDivElement;
@@ -666,7 +639,7 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
       renderDrawerContent();
       showToast('历史记录已清空');
     } else if (currentDrawerTab === 'saved') {
-      openSaveModal();
+      openSaveModal(true);
     } else if (currentDrawerTab === 'env') {
       openEnvModal();
     }
@@ -675,6 +648,51 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
   drawerSearch.addEventListener('input', () => {
     renderDrawerContent();
   });
+
+  let savedContextMenu: HTMLDivElement | null = null;
+  const closeSavedContextMenu = () => {
+    savedContextMenu?.remove();
+    savedContextMenu = null;
+    document.removeEventListener('pointerdown', closeContextOnOutside);
+    document.removeEventListener('keydown', closeContextOnEscape);
+  };
+  const closeContextOnOutside = (event: PointerEvent) => {
+    if (!savedContextMenu?.contains(event.target as Node)) closeSavedContextMenu();
+  };
+  const closeContextOnEscape = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') closeSavedContextMenu();
+  };
+  const editSavedRequest = (item: SavedRequest) => {
+    closeSavedContextMenu();
+    loadPayloadIntoUi(item.payload, item.id);
+    showToast(`正在编辑「${item.name}」，修改后点击“保存修改”`);
+    urlInput.focus();
+  };
+  const deleteSavedRequest = async (item: SavedRequest) => {
+    closeSavedContextMenu();
+    if (!await confirmAction({ title: '删除收藏的请求', message: `确定删除「${item.name}」吗？`, confirmText: '删除请求', destructive: true })) return;
+    Storage.deleteSavedRequest(item.id);
+    if (activeSavedRequestId === item.id) setActiveSavedRequest(null);
+    renderDrawerContent();
+    showToast(`已删除接口: ${item.name}`);
+  };
+  const openSavedContextMenu = (event: MouseEvent, item: SavedRequest) => {
+    event.preventDefault();
+    closeSavedContextMenu();
+    const menu = document.createElement('div');
+    menu.className = 'http-saved-context-menu';
+    menu.setAttribute('role', 'menu');
+    menu.innerHTML = '<button type="button" role="menuitem">编辑请求</button><button type="button" role="menuitem" class="danger">删除收藏</button>';
+    menu.querySelectorAll('button')[0].onclick = () => editSavedRequest(item);
+    menu.querySelectorAll('button')[1].onclick = () => { void deleteSavedRequest(item); };
+    document.body.append(menu);
+    savedContextMenu = menu;
+    menu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - menu.offsetWidth - 8))}px`;
+    menu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - menu.offsetHeight - 8))}px`;
+    document.addEventListener('pointerdown', closeContextOnOutside);
+    document.addEventListener('keydown', closeContextOnEscape);
+    menu.querySelector('button')?.focus();
+  };
 
   function renderDrawerContent() {
     const query = drawerSearch.value.trim().toLowerCase();
@@ -739,7 +757,7 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
             </button>
           </div>
         `;
-        drawerContent.querySelector('#btn-drawer-add-save')?.addEventListener('click', openSaveModal);
+        drawerContent.querySelector('#btn-drawer-add-save')?.addEventListener('click', () => openSaveModal(true));
         return;
       }
 
@@ -777,7 +795,8 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
 
         items.forEach((item) => {
           const div = document.createElement('div');
-          div.className = 'drawer-item';
+          div.className = `drawer-item${activeSavedRequestId === item.id ? ' selected' : ''}`;
+          div.dataset.savedId = item.id;
           const methodClass = item.payload.method.toLowerCase();
 
           div.innerHTML = `
@@ -789,27 +808,27 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
             </div>
             <div class="drawer-url" title="${escapeHtml(item.payload.url)}">${escapeHtml(item.payload.url)}</div>
             <div class="drawer-item-actions">
-              <button class="drawer-action-icon-btn btn-edit-item" title="重命名 / 修改分组">✏️</button>
-              <button class="drawer-action-icon-btn danger btn-del-item" title="删除接口">✕</button>
+              <button class="drawer-action-icon-btn btn-edit-item" type="button" title="编辑请求" aria-label="编辑请求">编辑</button>
+              <button class="drawer-action-icon-btn danger btn-del-item" type="button" title="删除收藏" aria-label="删除收藏">✕</button>
             </div>
           `;
 
           div.addEventListener('click', (e) => {
             if ((e.target as HTMLElement).closest('.drawer-item-actions')) return;
-            loadPayloadIntoUi(item.payload);
+            loadPayloadIntoUi(item.payload, item.id);
             showToast(`已载入接口: ${item.name}`);
           });
 
+          div.addEventListener('contextmenu', event => openSavedContextMenu(event, item));
+
           div.querySelector('.btn-edit-item')?.addEventListener('click', (e) => {
             e.stopPropagation();
-            openRenameModal(item);
+            editSavedRequest(item);
           });
 
           div.querySelector('.btn-del-item')?.addEventListener('click', (e) => {
             e.stopPropagation();
-            Storage.deleteSavedRequest(item.id);
-            renderDrawerContent();
-            showToast(`已删除接口: ${item.name}`);
+            void deleteSavedRequest(item);
           });
 
           bodyEl.appendChild(div);
@@ -864,7 +883,16 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
     return `${Math.floor(diff / 86400)}d前`;
   }
 
-  function loadPayloadIntoUi(payload: HttpRequestPayload) {
+  function setActiveSavedRequest(id: string | null) {
+    activeSavedRequestId = id;
+    const label = btnSave.querySelector('span');
+    if (label) label.textContent = id ? '保存修改' : '收藏';
+    btnSave.title = id ? '保存对当前收藏请求的修改' : '收藏当前请求';
+    drawerContent.querySelectorAll<HTMLElement>('.drawer-item').forEach(row => row.classList.toggle('selected', row.dataset.savedId === id && id !== null));
+  }
+
+  function loadPayloadIntoUi(payload: HttpRequestPayload, savedId: string | null = null) {
+    setActiveSavedRequest(savedId);
     importedTimeout = payload.timeout_seconds;
     ignoreSsl = payload.ignore_ssl ?? false;
     btnToggleSsl.innerHTML = ignoreSsl ? '<span>🔓 忽略 SSL</span>' : '<span>🔒 校验 SSL</span>';
@@ -1535,7 +1563,6 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
     btn.addEventListener('click', () => {
       curlModal.style.display = 'none';
       saveModal.style.display = 'none';
-      renameModal.style.display = 'none';
       envModal.style.display = 'none';
       cookiesModal.style.display = 'none';
     });
@@ -1731,24 +1758,27 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
   });
 
   const saveGroupCombobox = createGroupCombobox(saveGroupInput, saveGroupMenu, saveGroupTrigger);
-  const renameGroupCombobox = createGroupCombobox(renameGroupInput, renameGroupMenu, renameGroupTrigger);
 
   function updateGroupOptions() {
     const groups = Storage.getSavedGroups();
     saveGroupCombobox.setGroups(groups);
-    renameGroupCombobox.setGroups(groups);
   }
 
   // Save Modal
-  function openSaveModal() {
+  function openSaveModal(createNew = false) {
     updateGroupOptions();
+    const current = createNew ? undefined : Storage.getSavedRequests().find(item => item.id === activeSavedRequestId);
+    if (!createNew && !current && activeSavedRequestId) setActiveSavedRequest(null);
     saveModal.style.display = 'flex';
     const rawUrl = urlInput.value.trim();
-    saveNameInput.value = rawUrl ? `${currentMethod} ${rawUrl.substring(rawUrl.lastIndexOf('/') + 1) || '接口'}` : '';
-    saveGroupInput.value = '默认分组';
+    saveNameInput.value = current?.name || (rawUrl ? `${currentMethod} ${rawUrl.substring(rawUrl.lastIndexOf('/') + 1) || '接口'}` : '');
+    saveGroupInput.value = current?.group || '默认分组';
+    saveModal.querySelector('h3')!.textContent = current ? '编辑收藏请求' : '保存接口请求';
+    btnConfirmSave.textContent = current ? '保存修改' : '确认保存';
+    saveModal.dataset.editingId = current?.id || '';
     saveNameInput.focus();
   }
-  btnSave.addEventListener('click', openSaveModal);
+  btnSave.addEventListener('click', () => openSaveModal());
 
   btnConfirmSave.addEventListener('click', () => {
     const name = saveNameInput.value.trim();
@@ -1758,38 +1788,18 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
     }
     const group = saveGroupInput.value.trim() || '默认分组';
     const payload = getCurrentPayload();
-    Storage.saveRequest(name, payload, group);
-    saveModal.style.display = 'none';
-    showToast(`已保存接口: ${name} [${group}]`);
-    if (currentDrawerTab === 'saved') renderDrawerContent();
-  });
-
-  // Rename & Edit Group Modal
-  function openRenameModal(item: any) {
-    editingSavedId = item.id;
-    updateGroupOptions();
-    renameNameInput.value = item.name || '';
-    renameGroupInput.value = item.group || '默认分组';
-    renameModal.style.display = 'flex';
-    renameNameInput.focus();
-  }
-
-  btnConfirmRename.addEventListener('click', () => {
-    if (!editingSavedId) return;
-    const newName = renameNameInput.value.trim();
-    if (!newName) {
-      showToast('接口名称不能为空');
-      return;
+    const id = saveModal.dataset.editingId;
+    if (id) {
+      if (!Storage.getSavedRequests().some(item => item.id === id)) { showToast('原收藏已删除，请重新保存'); return; }
+      Storage.updateSavedRequest(id, { name, group, payload });
+      setActiveSavedRequest(id);
+    } else {
+      const item = Storage.saveRequest(name, payload, group);
+      setActiveSavedRequest(item.id);
     }
-    const newGroup = renameGroupInput.value.trim() || '默认分组';
-    Storage.updateSavedRequest(editingSavedId, {
-      name: newName,
-      group: newGroup,
-    });
-    renameModal.style.display = 'none';
-    editingSavedId = null;
-    showToast(`已更新接口信息: ${newName}`);
-    renderDrawerContent();
+    saveModal.style.display = 'none';
+    showToast(`${id ? '已更新' : '已保存'}接口: ${name} [${group}]`);
+    if (currentDrawerTab === 'saved') renderDrawerContent();
   });
 
   // Env Modal (Multi-Environment Groups Support)
@@ -1939,6 +1949,7 @@ export function initHttpClient(container: HTMLElement, showToast: (msg: string) 
   // Start a new request without changing the selected environment or saved history.
   btnNew.addEventListener('click', () => {
     if (isLoading) return;
+    setActiveSavedRequest(null);
     importedTimeout = undefined;
     lastSentRequest = undefined;
     lastResponse = null;
